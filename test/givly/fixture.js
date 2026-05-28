@@ -10,4 +10,5 @@ async function deployGivlyFixture() {
   return { givly, owner, donor1, donor2, ngo, attacker };
 }
 
-module.exports = { deployGivlyFixture };
+module.exports = { deployGivlyFixture, ethers };
+

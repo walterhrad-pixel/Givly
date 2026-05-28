@@ -1,6 +1,6 @@
 const { expect } = require("chai");
 const { loadFixture } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
-const { deployGivlyFixture } = require("./fixture");
+const { deployGivlyFixture, ethers } = require("./fixture");
 
 describe("Givly - Voting", function () {
   async function setupCampaignWithDonations(fixture) {

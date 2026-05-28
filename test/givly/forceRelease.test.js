@@ -1,6 +1,6 @@
 const { expect } = require("chai");
 const { loadFixture } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
-const { deployGivlyFixture } = require("./fixture");
+const { deployGivlyFixture, ethers } = require("./fixture");
 
 describe("Givly - forceRelease", function () {
   it("forceRelease only callable by owner and reverts on insufficient balance", async function () {
