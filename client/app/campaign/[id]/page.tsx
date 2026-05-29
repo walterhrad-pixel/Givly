@@ -102,7 +102,7 @@ export default function CampaignPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground text-center">{campaign.title}</p>
-            <Button className="w-full" onClick={() => setRole("donor")}>I am a Donor</Button>
+            <Button className="w-full" onClick={() => { setRole("donor"); setSigner(null); setAddress(""); }}>I am a Donor</Button>
             <Button className="w-full" variant="outline" onClick={() => setRole("ngo")}>I am the NGO</Button>
           </CardContent>
         </Card>
