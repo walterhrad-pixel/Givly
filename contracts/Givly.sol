@@ -6,7 +6,8 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract Givly is Ownable, ReentrancyGuard {
 
-    uint256 public constant MIN_STAGE_INTERVAL = 2 minutes;
+    uint256 public constant MIN_STAGE_INTERVAL = 30 days;
+    uint256 public constant REFUND_WINDOW = 30 days;
 
     enum CampaignStatus { Active, Frozen, Completed }
 
@@ -24,6 +25,7 @@ contract Givly is Ownable, ReentrancyGuard {
         address payable ngo;
         uint256 goal;
         uint256 totalDonated;
+        uint256 frozenAt;
         CampaignStatus status;
         uint256 currentStage;
         uint256 lastReleaseTime;
@@ -34,11 +36,13 @@ contract Givly is Ownable, ReentrancyGuard {
     uint256 public campaignCount;
     mapping(uint256 => Campaign) public campaigns;
     mapping(uint256 => mapping(address => uint256)) public donorAmounts;
+    mapping(uint256 => mapping(address => bool)) public refundClaimed;
 
     event CampaignCreated(uint256 indexed id, string title, address ngo, uint256 goal);
     event DonationReceived(uint256 indexed campaignId, address donor, uint256 amount);
     event StageReleased(uint256 indexed campaignId, uint256 stageIndex, uint256 amount);
-    event CampaignFrozen(uint256 indexed campaignId, string reason);
+    event CampaignFrozen(uint256 indexed campaignId, uint256 frozenAt);
+    event RefundClaimed(uint256 indexed campaignId, address donor, uint256 amount);
 
     constructor() Ownable(msg.sender) {}
 
@@ -68,7 +72,7 @@ contract Givly is Ownable, ReentrancyGuard {
         c.goal = _goal;
         c.status = CampaignStatus.Active;
         c.currentStage = 0;
-        c.lastReleaseTime = block.timestamp;
+        c.lastReleaseTime = block.timestamp - MIN_STAGE_INTERVAL;
 
         for (uint256 i = 0; i < _stageDescs.length; i++) {
             c.stages.push(Stage({
@@ -105,13 +109,14 @@ contract Givly is Ownable, ReentrancyGuard {
 
         if (block.timestamp < c.lastReleaseTime + MIN_STAGE_INTERVAL) {
             c.status = CampaignStatus.Frozen;
-            emit CampaignFrozen(_campaignId, "Early release request detected");
+            c.frozenAt = block.timestamp;
+            emit CampaignFrozen(_campaignId, block.timestamp);
             return;
         }
 
         Stage storage s = c.stages[c.currentStage];
-        require(!s.released, "Stage already released");
-        require(address(this).balance >= s.amount, "Insufficient contract balance");
+        require(s.released == false, "Stage already released");
+        require(address(this).balance >= s.amount, "Insufficient balance");
 
         s.released = true;
         s.releasedAt = block.timestamp;
@@ -124,6 +129,41 @@ contract Givly is Ownable, ReentrancyGuard {
 
         c.ngo.transfer(s.amount);
         emit StageReleased(_campaignId, c.currentStage - 1, s.amount);
+    }
+
+    function claimRefund(uint256 _campaignId) external nonReentrant {
+        Campaign storage c = campaigns[_campaignId];
+        require(c.status == CampaignStatus.Frozen, "Campaign not frozen");
+        require(block.timestamp >= c.frozenAt + REFUND_WINDOW, "Refund window not open yet");
+        require(donorAmounts[_campaignId][msg.sender] > 0, "Not a donor");
+        require(refundClaimed[_campaignId][msg.sender] == false, "Refund already claimed");
+
+        uint256 totalLocked = address(this).balance;
+        uint256 donorShare = (donorAmounts[_campaignId][msg.sender] * totalLocked) / c.totalDonated;
+
+        refundClaimed[_campaignId][msg.sender] = true;
+        payable(msg.sender).transfer(donorShare);
+
+        emit RefundClaimed(_campaignId, msg.sender, donorShare);
+    }
+
+    function getRefundStatus(uint256 _campaignId, address _donor) external view returns (
+        bool isFrozen,
+        bool refundAvailable,
+        bool alreadyClaimed,
+        uint256 estimatedRefund,
+        uint256 timeUntilRefund
+    ) {
+        Campaign storage c = campaigns[_campaignId];
+        isFrozen = c.status == CampaignStatus.Frozen;
+        alreadyClaimed = refundClaimed[_campaignId][_donor];
+        uint256 unlockTime = c.frozenAt + REFUND_WINDOW;
+        refundAvailable = isFrozen && block.timestamp >= unlockTime && alreadyClaimed == false;
+        uint256 totalLocked = address(this).balance;
+        estimatedRefund = c.totalDonated > 0
+            ? (donorAmounts[_campaignId][_donor] * totalLocked) / c.totalDonated
+            : 0;
+        timeUntilRefund = block.timestamp >= unlockTime ? 0 : unlockTime - block.timestamp;
     }
 
     function getStages(uint256 _campaignId) external view returns (Stage[] memory) {
@@ -143,13 +183,14 @@ contract Givly is Ownable, ReentrancyGuard {
         uint256 totalDonated,
         uint8 status,
         uint256 currentStage,
-        uint256 lastReleaseTime
+        uint256 lastReleaseTime,
+        uint256 frozenAt
     ) {
         Campaign storage c = campaigns[_campaignId];
         return (
             c.id, c.title, c.description, c.ngo,
             c.goal, c.totalDonated, uint8(c.status),
-            c.currentStage, c.lastReleaseTime
+            c.currentStage, c.lastReleaseTime, c.frozenAt
         );
     }
 
