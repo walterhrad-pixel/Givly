@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ethers } from "ethers";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,21 +18,6 @@ interface ConnectWalletProps {
 export default function ConnectWallet({ onConnected }: ConnectWalletProps) {
   const [address, setAddress] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
-
-  useEffect(() => {
-    const reconnect = async () => {
-      if (typeof window.ethereum === "undefined") return;
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const accounts = await provider.listAccounts();
-      if (accounts.length > 0) {
-        const signer = await provider.getSigner();
-        const addr = await signer.getAddress();
-        setAddress(addr);
-        onConnected(signer, addr);
-      }
-    };
-    reconnect();
-  }, []);
 
   const connect = async () => {
     if (typeof window.ethereum === "undefined") {
@@ -54,11 +39,20 @@ export default function ConnectWallet({ onConnected }: ConnectWalletProps) {
     }
   };
 
+  const disconnect = () => {
+    setAddress(null);
+  };
+
   if (address) {
     return (
-      <Badge variant="outline" className="text-sm px-3 py-1">
-        {address.slice(0, 6)}...{address.slice(-4)}
-      </Badge>
+      <div className="flex items-center gap-2">
+        <Badge variant="outline" className="text-sm px-3 py-1">
+          {address.slice(0, 6)}...{address.slice(-4)}
+        </Badge>
+        <Button variant="ghost" size="sm" onClick={disconnect} className="text-xs text-muted-foreground">
+          Disconnect
+        </Button>
+      </div>
     );
   }
 
