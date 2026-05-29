@@ -6,14 +6,16 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract Givly is Ownable, ReentrancyGuard {
 
-    uint256 public constant VOTE_THRESHOLD = 60; // 60% of total donated must vote yes
+    uint256 public constant MIN_STAGE_INTERVAL = 30 days;
+    uint256 public constant REFUND_WINDOW = 30 days;
 
-    struct Milestone {
+    enum CampaignStatus { Active, Frozen, Completed }
+
+    struct Stage {
         string description;
         uint256 amount;
         bool released;
-        uint256 votesFor;
-        uint256 votesAgainst;
+        uint256 releasedAt;
     }
 
     struct Campaign {
@@ -23,21 +25,24 @@ contract Givly is Ownable, ReentrancyGuard {
         address payable ngo;
         uint256 goal;
         uint256 totalDonated;
-        bool active;
-        Milestone[] milestones;
+        uint256 frozenAt;
+        CampaignStatus status;
+        uint256 currentStage;
+        uint256 lastReleaseTime;
+        Stage[] stages;
         address[] donors;
     }
 
     uint256 public campaignCount;
     mapping(uint256 => Campaign) public campaigns;
     mapping(uint256 => mapping(address => uint256)) public donorAmounts;
-    // campaignId => milestoneIndex => donor => hasVoted
-    mapping(uint256 => mapping(uint256 => mapping(address => bool))) public hasVoted;
+    mapping(uint256 => mapping(address => bool)) public refundClaimed;
 
     event CampaignCreated(uint256 indexed id, string title, address ngo, uint256 goal);
     event DonationReceived(uint256 indexed campaignId, address donor, uint256 amount);
-    event VoteCast(uint256 indexed campaignId, uint256 milestoneIndex, address voter, bool approve);
-    event FundsReleased(uint256 indexed campaignId, uint256 milestoneIndex, uint256 amount);
+    event StageReleased(uint256 indexed campaignId, uint256 stageIndex, uint256 amount);
+    event CampaignFrozen(uint256 indexed campaignId, uint256 frozenAt);
+    event RefundClaimed(uint256 indexed campaignId, address donor, uint256 amount);
 
     constructor() Ownable(msg.sender) {}
 
@@ -47,18 +52,18 @@ contract Givly is Ownable, ReentrancyGuard {
         string calldata _description,
         address payable _ngo,
         uint256 _goal,
-        string[] calldata _milestoneDescs,
-        uint256[] calldata _milestoneAmounts
+        string[] calldata _stageDescs,
+        uint256[] calldata _stageAmounts
     ) external onlyOwner {
-        require(_milestoneDescs.length == _milestoneAmounts.length, "Milestone mismatch");
-        require(_milestoneDescs.length > 0, "Need at least one milestone");
+        require(_stageDescs.length == _stageAmounts.length, "Stage mismatch");
+        require(_stageDescs.length > 0, "Need at least one stage");
         require(_ngo != address(0), "Invalid NGO address");
 
         uint256 total;
-        for (uint256 i = 0; i < _milestoneAmounts.length; i++) {
-            total += _milestoneAmounts[i];
+        for (uint256 i = 0; i < _stageAmounts.length; i++) {
+            total += _stageAmounts[i];
         }
-        require(total == _goal, "Milestone amounts must sum to goal");
+        require(total == _goal, "Stage amounts must sum to goal");
 
         Campaign storage c = campaigns[campaignCount];
         c.id = campaignCount;
@@ -66,15 +71,16 @@ contract Givly is Ownable, ReentrancyGuard {
         c.description = _description;
         c.ngo = _ngo;
         c.goal = _goal;
-        c.active = true;
+        c.status = CampaignStatus.Active;
+        c.currentStage = 0;
+        c.lastReleaseTime = block.timestamp - MIN_STAGE_INTERVAL;
 
-        for (uint256 i = 0; i < _milestoneDescs.length; i++) {
-            c.milestones.push(Milestone({
-                description: _milestoneDescs[i],
-                amount: _milestoneAmounts[i],
+        for (uint256 i = 0; i < _stageDescs.length; i++) {
+            c.stages.push(Stage({
+                description: _stageDescs[i],
+                amount: _stageAmounts[i],
                 released: false,
-                votesFor: 0,
-                votesAgainst: 0
+                releasedAt: 0
             }));
         }
 
@@ -85,7 +91,7 @@ contract Givly is Ownable, ReentrancyGuard {
     // ── Donate ────────────────────────────────────────────────
     function donate(uint256 _campaignId) external payable nonReentrant {
         Campaign storage c = campaigns[_campaignId];
-        require(c.active, "Campaign not active");
+        require(c.status == CampaignStatus.Active, "Campaign not active");
         require(msg.value > 0, "Donation must be > 0");
 
         if (donorAmounts[_campaignId][msg.sender] == 0) {
@@ -97,55 +103,73 @@ contract Givly is Ownable, ReentrancyGuard {
         emit DonationReceived(_campaignId, msg.sender, msg.value);
     }
 
-    // ── Vote on Milestone (donors only) ──────────────────────
-    function voteOnMilestone(
-        uint256 _campaignId,
-        uint256 _milestoneIndex,
-        bool _approve
-    ) external {
+    function requestRelease(uint256 _campaignId) external nonReentrant {
         Campaign storage c = campaigns[_campaignId];
-        require(donorAmounts[_campaignId][msg.sender] > 0, "Only donors can vote");
-        require(!hasVoted[_campaignId][_milestoneIndex][msg.sender], "Already voted");
-        require(!c.milestones[_milestoneIndex].released, "Already released");
+        require(msg.sender == c.ngo, "Only NGO can request release");
+        require(c.status == CampaignStatus.Active, "Campaign not active");
+        require(c.currentStage < c.stages.length, "All stages released");
 
-        hasVoted[_campaignId][_milestoneIndex][msg.sender] = true;
-
-        Milestone storage m = c.milestones[_milestoneIndex];
-        if (_approve) {
-            m.votesFor += donorAmounts[_campaignId][msg.sender];
-        } else {
-            m.votesAgainst += donorAmounts[_campaignId][msg.sender];
+        if (block.timestamp < c.lastReleaseTime + MIN_STAGE_INTERVAL) {
+            c.status = CampaignStatus.Frozen;
+            c.frozenAt = block.timestamp;
+            emit CampaignFrozen(_campaignId, block.timestamp);
+            return;
         }
 
-        emit VoteCast(_campaignId, _milestoneIndex, msg.sender, _approve);
+        Stage storage s = c.stages[c.currentStage];
+        require(s.released == false, "Stage already released");
+        require(address(this).balance >= s.amount, "Insufficient balance");
 
-        // Auto-release if threshold met
-        if (m.votesFor * 100 >= c.totalDonated * VOTE_THRESHOLD) {
-            _releaseFunds(_campaignId, _milestoneIndex);
+        s.released = true;
+        s.releasedAt = block.timestamp;
+        c.lastReleaseTime = block.timestamp;
+        c.currentStage++;
+
+        if (c.currentStage == c.stages.length) {
+            c.status = CampaignStatus.Completed;
         }
+
+        c.ngo.transfer(s.amount);
+        emit StageReleased(_campaignId, c.currentStage - 1, s.amount);
     }
 
-    // ── Internal Release ──────────────────────────────────────
-    function _releaseFunds(uint256 _campaignId, uint256 _milestoneIndex) internal {
+    function claimRefund(uint256 _campaignId) external nonReentrant {
         Campaign storage c = campaigns[_campaignId];
-        Milestone storage m = c.milestones[_milestoneIndex];
-        require(!m.released, "Already released");
-        require(address(this).balance >= m.amount, "Insufficient balance");
+        require(c.status == CampaignStatus.Frozen, "Campaign not frozen");
+        require(block.timestamp >= c.frozenAt + REFUND_WINDOW, "Refund window not open yet");
+        require(donorAmounts[_campaignId][msg.sender] > 0, "Not a donor");
+        require(refundClaimed[_campaignId][msg.sender] == false, "Refund already claimed");
 
-        m.released = true;
-        c.ngo.transfer(m.amount);
+        uint256 totalLocked = address(this).balance;
+        uint256 donorShare = (donorAmounts[_campaignId][msg.sender] * totalLocked) / c.totalDonated;
 
-        emit FundsReleased(_campaignId, _milestoneIndex, m.amount);
+        refundClaimed[_campaignId][msg.sender] = true;
+        payable(msg.sender).transfer(donorShare);
+
+        emit RefundClaimed(_campaignId, msg.sender, donorShare);
     }
 
-    // ── Emergency release by owner if voting stalls ───────────
-    function forceRelease(uint256 _campaignId, uint256 _milestoneIndex) external onlyOwner nonReentrant {
-        _releaseFunds(_campaignId, _milestoneIndex);
+    function getRefundStatus(uint256 _campaignId, address _donor) external view returns (
+        bool isFrozen,
+        bool refundAvailable,
+        bool alreadyClaimed,
+        uint256 estimatedRefund,
+        uint256 timeUntilRefund
+    ) {
+        Campaign storage c = campaigns[_campaignId];
+        isFrozen = c.status == CampaignStatus.Frozen;
+        alreadyClaimed = refundClaimed[_campaignId][_donor];
+        uint256 unlockTime = c.frozenAt + REFUND_WINDOW;
+        refundAvailable = isFrozen && block.timestamp >= unlockTime && alreadyClaimed == false;
+        uint256 totalLocked = address(this).balance;
+        estimatedRefund = c.totalDonated > 0
+            ? (donorAmounts[_campaignId][_donor] * totalLocked) / c.totalDonated
+            : 0;
+        timeUntilRefund = block.timestamp >= unlockTime ? 0 : unlockTime - block.timestamp;
     }
 
-    // ── Views ─────────────────────────────────────────────────
-    function getMilestones(uint256 _campaignId) external view returns (Milestone[] memory) {
-        return campaigns[_campaignId].milestones;
+    function getStages(uint256 _campaignId) external view returns (Stage[] memory) {
+        return campaigns[_campaignId].stages;
     }
 
     function getDonors(uint256 _campaignId) external view returns (address[] memory) {
@@ -159,10 +183,24 @@ contract Givly is Ownable, ReentrancyGuard {
         address ngo,
         uint256 goal,
         uint256 totalDonated,
-        bool active
+        uint8 status,
+        uint256 currentStage,
+        uint256 lastReleaseTime,
+        uint256 frozenAt
     ) {
         Campaign storage c = campaigns[_campaignId];
-        return (c.id, c.title, c.description, c.ngo, c.goal, c.totalDonated, c.active);
+        return (
+            c.id, c.title, c.description, c.ngo,
+            c.goal, c.totalDonated, uint8(c.status),
+            c.currentStage, c.lastReleaseTime, c.frozenAt
+        );
+    }
+
+    function getTimeUntilNextRelease(uint256 _campaignId) external view returns (uint256) {
+        Campaign storage c = campaigns[_campaignId];
+        uint256 nextAllowed = c.lastReleaseTime + MIN_STAGE_INTERVAL;
+        if (block.timestamp >= nextAllowed) return 0;
+        return nextAllowed - block.timestamp;
     }
 
     function getVoteStatus(uint256 _campaignId, uint256 _milestoneIndex) external view returns (
