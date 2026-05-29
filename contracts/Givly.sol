@@ -46,6 +46,7 @@ contract Givly is Ownable, ReentrancyGuard {
 
     constructor() Ownable(msg.sender) {}
 
+    // ── Create Campaign (owner only) ──────────────────────────
     function createCampaign(
         string calldata _title,
         string calldata _description,
@@ -87,6 +88,7 @@ contract Givly is Ownable, ReentrancyGuard {
         campaignCount++;
     }
 
+    // ── Donate ────────────────────────────────────────────────
     function donate(uint256 _campaignId) external payable nonReentrant {
         Campaign storage c = campaigns[_campaignId];
         require(c.status == CampaignStatus.Active, "Campaign not active");
@@ -199,5 +201,22 @@ contract Givly is Ownable, ReentrancyGuard {
         uint256 nextAllowed = c.lastReleaseTime + MIN_STAGE_INTERVAL;
         if (block.timestamp >= nextAllowed) return 0;
         return nextAllowed - block.timestamp;
+    }
+
+    function getVoteStatus(uint256 _campaignId, uint256 _milestoneIndex) external view returns (
+        uint256 votesFor,
+        uint256 votesAgainst,
+        uint256 threshold,
+        bool canRelease
+    ) {
+        Campaign storage c = campaigns[_campaignId];
+        Milestone storage m = c.milestones[_milestoneIndex];
+        uint256 needed = (c.totalDonated * VOTE_THRESHOLD) / 100;
+        return (
+            m.votesFor,
+            m.votesAgainst,
+            needed,
+            m.votesFor >= needed
+        );
     }
 }
