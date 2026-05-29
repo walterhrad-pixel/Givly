@@ -19,9 +19,11 @@
   },
   "homepage": "https://github.com/walterhrad-pixel/Givly#readme",
   "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@nomicfoundation/hardhat-toolbox": "^3.0.0",
     "@openzeppelin/contracts": "^5.0.0",
-    "hardhat": "^2.28.0",
+    "dotenv": "^17.4.2",
+    "ethers": "^6.16.0",
+    "hardhat": "^2.28.6",
     "jest": "^30.4.2"
   },
   "directories": {

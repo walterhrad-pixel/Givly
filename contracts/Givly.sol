@@ -203,20 +203,13 @@ contract Givly is Ownable, ReentrancyGuard {
         return nextAllowed - block.timestamp;
     }
 
-    function getVoteStatus(uint256 _campaignId, uint256 _milestoneIndex) external view returns (
+    function getVoteStatus(uint256 /* _campaignId */, uint256 /* _milestoneIndex */) external pure returns (
         uint256 votesFor,
         uint256 votesAgainst,
         uint256 threshold,
         bool canRelease
     ) {
-        Campaign storage c = campaigns[_campaignId];
-        Milestone storage m = c.milestones[_milestoneIndex];
-        uint256 needed = (c.totalDonated * VOTE_THRESHOLD) / 100;
-        return (
-            m.votesFor,
-            m.votesAgainst,
-            needed,
-            m.votesFor >= needed
-        );
+        // Voting subsystem removed/renamed — return safe defaults to keep ABI stable
+        return (0, 0, 0, false);
     }
 }
