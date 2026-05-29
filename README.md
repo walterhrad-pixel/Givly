@@ -1,6 +1,5 @@
 # Givly
 
-<<<<<<< HEAD
 Givly is a Hardhat-based Ethereum smart contract project implementing a milestone-driven donation platform. Donors fund campaigns and vote to release milestone funds to an NGO; the contract enforces vote thresholds and supports owner emergency release.
 
 ## Key Features
@@ -40,7 +39,64 @@ Security notes: uses OpenZeppelin `Ownable` and `ReentrancyGuard`. Review thresh
 Prerequisites: Node.js (16+ recommended), npm or pnpm, and Hardhat.
 
 Install dependencies:
-=======
+
+```bash
+npm install
+```
+
+Compile contracts:
+
+```bash
+npx hardhat compile
+```
+
+Run tests (project contains example tests):
+
+```bash
+npm test
+# or
+npx hardhat test
+```
+
+Deploy locally (Hardhat network):
+
+```bash
+npx hardhat run scripts/deploy.js --network localhost
+```
+
+The deploy script logs the deployer address and deployed contract address.
+
+## Using the ABI
+
+The contract ABI and an example local address are provided in `lib/contract.ts`. Use this to instantiate a contract client in scripts or frontends.
+
+## Example: Sending Transactions via viem (L2/OP)
+
+`scripts/send-op-tx.ts` contains an example showing how to create a `viem` client from a Hardhat network instance and send an L2 transaction (estimates L1 gas and sends a tiny value). Modify the network/client config to match your setup before running.
+
+## Ignition and Modules
+
+The `ignition/modules/Lock.js` file demonstrates a Hardhat Ignition module for deterministic deployments. It's included as an example and not required to use the `Givly` contract.
+
+## Development Notes
+
+- Solidity: `0.8.20` (see `hardhat.config.js`)
+- OpenZeppelin Contracts used for ownership and reentrancy guards
+- Tests currently include the `Lock` example; add `Givly` unit and integration tests before production deployment
+
+## Next Steps / Suggestions
+
+- Add comprehensive tests for `Givly` (donation flows, voting, edge cases)
+- Add a script or frontend to create campaigns and submit donations/votes
+- Add CI (e.g., GitHub Actions) to run `npx hardhat test` and `npx hardhat compile`
+
+## License
+
+This repository indicates `ISC` in `package.json`. Verify license compatibility before reuse.
+
+---
+# Givly
+
 A blockchain-based donation platform connecting donors and verified NGOs. Donated funds are locked in a smart contract and released to NGOs in stages — only after a minimum time period has elapsed. If an NGO attempts to request funds early, the contract permanently freezes all remaining funds, protecting donors from misuse.
 
 ## How It Works
@@ -107,29 +163,11 @@ cd Givly
 ```
 
 ### 2. Install root dependencies (Hardhat)
->>>>>>> b7f385d (added project README with setup instructions and test accounts)
 
 ```bash
 npm install
 ```
 
-<<<<<<< HEAD
-Compile contracts:
-
-```bash
-npx hardhat compile
-```
-
-Run tests (project contains example tests):
-
-```bash
-npm test
-# or
-npx hardhat test
-```
-
-Deploy locally (Hardhat network):
-=======
 ### 3. Install frontend dependencies
 
 ```bash
@@ -145,45 +183,11 @@ npx hardhat node
 Leave this running. Keep this terminal open.
 
 ### 5. Deploy the smart contract (Terminal 2)
->>>>>>> b7f385d (added project README with setup instructions and test accounts)
 
 ```bash
 npx hardhat run scripts/deploy.js --network localhost
 ```
 
-<<<<<<< HEAD
-The deploy script logs the deployer address and deployed contract address.
-
-## Using the ABI
-
-The contract ABI and an example local address are provided in `lib/contract.ts`. Use this to instantiate a contract client in scripts or frontends.
-
-## Example: Sending Transactions via viem (L2/OP)
-
-`scripts/send-op-tx.ts` contains an example showing how to create a `viem` client from a Hardhat network instance and send an L2 transaction (estimates L1 gas and sends a tiny value). Modify the network/client config to match your setup before running.
-
-## Ignition and Modules
-
-The `ignition/modules/Lock.js` file demonstrates a Hardhat Ignition module for deterministic deployments. It's included as an example and not required to use the `Givly` contract.
-
-## Development Notes
-
-- Solidity: `0.8.20` (see `hardhat.config.js`)
-- OpenZeppelin Contracts used for ownership and reentrancy guards
-- Tests currently include the `Lock` example; add `Givly` unit and integration tests before production deployment
-
-## Next Steps / Suggestions
-
-- Add comprehensive tests for `Givly` (donation flows, voting, edge cases)
-- Add a script or frontend to create campaigns and submit donations/votes
-- Add CI (e.g., GitHub Actions) to run `npx hardhat test` and `npx hardhat compile`
-
-## License
-
-This repository indicates `ISC` in `package.json`. Verify license compatibility before reuse.
-
----
-=======
 This deploys the contract and automatically updates `client/lib/contract.ts` with the new ABI and address.
 
 ### 6. Seed sample campaigns (Terminal 2)
@@ -280,4 +284,3 @@ cd client && npx vercel
 ## License
 
 MIT
->>>>>>> b7f385d (added project README with setup instructions and test accounts)
